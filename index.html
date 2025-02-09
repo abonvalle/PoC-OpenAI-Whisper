@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Speech to Text</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+        justify-content: flex-start;
+        height: 100vh;
+        margin: 0;
+      }
+      h1 {
+        margin-top: 25px;
+        margin-bottom: 5px;
+      }
+      h2 {
+        margin-top: 0px;
+        margin-bottom: 85px;
+      }
+
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+      #textOutputField {
+        margin-bottom: 20px;
+        width: 80%;
+        border: 1px solid #ccc;
+        padding: 10px;
+        min-height: 100px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Audio Transcription PoC</h1>
+    <h2>with OpenAI Whisper</h2>
+
+    <fieldset id="textOutputField">
+      <legend>
+        <h3>Transcription :</h3>
+      </legend>
+      <div id="textOutput"></div>
+    </fieldset>
+    <button id="recordButton">🎤 Start Recording</button>
+    <button id="stopRecordButton" style="display: none">
+      🛑 Stop Recording
+    </button>
+    <script src="script.js"></script>
+  </body>
+</html>
