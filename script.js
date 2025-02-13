@@ -18,7 +18,13 @@ async function record() {
   }
 
   textOutput.textContent = "Recording...";
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    },
+  });
   const mediaRecorder = new MediaRecorder(stream);
   const audioChunks = [];
 
@@ -27,15 +33,16 @@ async function record() {
   };
 
   mediaRecorder.onstop = async () => {
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-      ? "audio/webm"
-      : "audio/ogg"; // Default to OGG if WebM isn't supported
     stream.getTracks().forEach((track) => track.stop());
     const audioBlob = new Blob(audioChunks, {
-      type: mimeType,
+      type: mediaRecorder.mimeType,
     });
     const formData = new FormData();
-    formData.append("file", audioBlob, `recording.${mimeType.split("/")[1]}`);
+    formData.append(
+      "file",
+      audioBlob,
+      `recording.${mediaRecorder.mimeType.split("/")[1]}`
+    );
     textOutput.textContent = "Waiting for transcription...";
 
     const response = await fetch("http://localhost:5000/transcribe", {

@@ -32,8 +32,8 @@ cd PoC-OpenAI-Whisper
 #### 2. Create a virtual environment (optional but recommended)
 
 ```sh
-python -m venv venv
-source venv/bin/activate # On Windows: venv\Scripts\activate
+python -m venv .poc_openai_whisper_env
+source .poc_openai_whisper_env/bin/activate # On Windows: .poc_openai_whisper_env\Scripts\activate
 ```
 
 #### 3. Install Python dependencies
