@@ -35,6 +35,15 @@
         padding: 10px;
         min-height: 100px;
       }
+      .duration {
+        width: 80%;
+        margin-bottom: 20px;
+      }
+      #protocolSelect {
+        margin-bottom: 20px;
+        padding: 10px 20px;
+        font-size: 16px;
+      }
     </style>
   </head>
   <body>
@@ -47,8 +56,21 @@
       </legend>
       <div id="textOutput"></div>
     </fieldset>
-    <button id="recordButton">🎤 Start Recording</button>
-    <button id="stopRecordButton" style="display: none">
+    <div class="duration">
+      Transcription duration : <span id="duration">0</span>ms
+    </div>
+    <select id="protocolSelect">
+      <option value="http">HTTP</option>
+      <option value="websocket">Websocket</option>
+    </select>
+    <button id="recordButton" onclick="startRecording()">
+      🎤 Start Recording
+    </button>
+    <button
+      id="stopRecordButton"
+      onclick="stopRecording()"
+      style="display: none"
+    >
       🛑 Stop Recording
     </button>
     <script src="script.js"></script>

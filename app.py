@@ -1,4 +1,3 @@
-import whisper 
 import sounddevice as sd
 import os
 import scipy.io.wavfile as wav
@@ -8,14 +7,20 @@ import subprocess
 from flask_cors import CORS
 from typing import Literal
 import argparse
+import time
+import torch
+from transformers import pipeline
+from flask_socketio import SocketIO
+import tempfile
+from pydub import AudioSegment, silence
+
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'whisper_websocket' 
+socketio = SocketIO(app)
 CORS(app) 
 
-modelsType = Literal['tiny.en', 'tiny', 'base.en', 'base', 'small.en', 'small', 'medium.en', 'medium', 'large-v1', 'large-v2', 'large-v3', 'large', 'large-v3-turbo', 'turbo']
-# print(whisper.available_models())
-
-# Availables models are ['tiny.en', 'tiny', 'base.en', 'base', 'small.en', 'small', 'medium.en', 'medium', 'large-v1', 'large-v2', 'large-v3', 'large', 'large-v3-turbo', 'turbo']
+whisper = pipeline("automatic-speech-recognition", "openai/whisper-large-v3", torch_dtype=torch.float16, device="cuda:0")
 
 # TODO : Add CLI record and websocket record 
 
@@ -53,17 +58,62 @@ def http_transcribe():
             subprocess.run(ffmpeg_cmd, check=True)
             
             # Pass converted file to Whisper model
-            result = transcribeFile(temp_output_audio.name)
-    return jsonify({"message": "Success", "transcription": result})
+            result = transcribeFile(temp_output_audio.name,model="base")
+    return jsonify({"message": "Success", "transcription": result["transcription"], "duration": result["duration"]})
 
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
 
-    
-def transcribeFile(file,model:modelsType="base"):
+@socketio.on('transcribe')
+def handle_transcription(data):
+    print("Received audio chunk")
+
+    # Save chunk temporarily
+    with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_audio:
+        temp_audio.write(data)
+        temp_audio.flush()
+
+        # Convert to wav
+        temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        os.system(f"ffmpeg -i {temp_audio.name} -ac 1 -ar 16000 -y {temp_wav.name}")
+
+        # Load and buffer the audio
+        chunk = AudioSegment.from_wav(temp_wav.name)
+        audio_buffer.append(chunk)
+
+    # Check if it's time to transcribe
+    if len(audio_buffer) >= 3:  # For example, every 3 chunks
+        joined_audio = sum(audio_buffer)
+
+        # Detect natural silence points
+        silence_thresh = -40  # Adjust as needed
+        min_silence_len = 500  # 0.5 seconds
+        chunks = silence.split_on_silence(joined_audio, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
+
+        # Only transcribe if there's at least one chunk
+        if chunks:
+            # Join chunks into a single audio segment
+            final_audio = sum(chunks)
+            with tempfile.NamedTemporaryFile(delete=True, suffix=".wav") as final_wav:
+                final_audio.export(final_wav.name, format="wav")
+                transcribeFile(final_wav.name)
+
+                # Send transcription back to client
+                socketio.emit('transcription', jsonify(transcription))
+
+        # Clear the buffer after processing
+        audio_buffer.clear()
+
+def transcribeFile(file):
+    print("Loading model...")
     model = whisper.load_model(model) 
     print("Transcribing...")
-    result = model.transcribe(file, language='fr', task='transcribe') 
-    print(result["text"])
-    return result["text"]
+    start = time.time()
+    transcription = whisper(file, language='fr', task='transcribe')
+    end = time.time()
+    print(transcription["text"])
+    return {"transcription":transcription["text"],"duration":round(end-start,2)}
 
 def cli_transcribe(max_duration_in_seconds = 20):
     fs = 44100  # Sample rate
@@ -81,6 +131,7 @@ def cli_transcribe(max_duration_in_seconds = 20):
     
 
 if __name__ == "__main__":
+    socketio.run(app, debug=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("--duration","-d", type=int,default=20, help="The duration of the recording in seconds")
     args = parser.parse_args()
