@@ -63,16 +63,22 @@
       <option value="http">HTTP</option>
       <option value="websocket">Websocket</option>
     </select>
-    <button id="recordButton" onclick="startRecording()">
-      🎤 Start Recording
-    </button>
-    <button
-      id="stopRecordButton"
-      onclick="stopRecording()"
-      style="display: none"
-    >
-      🛑 Stop Recording
-    </button>
+    <div>
+      <button id="recordButton" onclick="startRecording()">
+        🎤 Start Recording
+      </button>
+      <button
+        id="stopRecordButton"
+        onclick="stopRecording()"
+        style="display: none"
+      >
+        🛑 Stop Recording
+      </button>
+      or
+      <button id="uploadFileButton" onclick="uploadFile()">
+        📂 Upload a file
+      </button>
+    </div>
     <script src="script.js"></script>
   </body>
 </html>

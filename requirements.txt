@@ -2,7 +2,6 @@ flask
 sounddevice
 scipy
 flask-cors
-flask-socketio
 transformers
 torch
-pydub
+websockets
