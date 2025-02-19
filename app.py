@@ -1,40 +1,41 @@
 import sounddevice as sd
 import os
 import scipy.io.wavfile as wav
-from flask import Flask, request, jsonify
 import tempfile
 import subprocess
-from flask_cors import CORS
 import argparse
 import time
 import torch
-from transformers import pipeline
 import tempfile
-import asyncio
-from websockets.asyncio.server import serve
+from fastapi import FastAPI, UploadFile, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Literal
+import whisper
+import shutil
 
-app = Flask(__name__)
-CORS(app)
+modelsType = Literal['tiny.en', 'tiny', 'base.en', 'base', 'small.en', 'small', 'medium.en', 'medium', 'large-v1', 'large-v2', 'large-v3', 'large', 'large-v3-turbo', 'turbo']
+global model
+model= whisper.load_model("turbo") 
+app = FastAPI()
 
-whisper = pipeline("automatic-speech-recognition", "openai/whisper-large-v3-turbo", torch_dtype=torch.float16,  device="cpu", batch_size=8)
-torch.set_num_threads(16)  # Match the number of CPU cores
-torch.set_num_interop_threads(16)
-# TODO : Add CLI record and websocket record 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.route('/transcribe', methods=['POST'])
-def http_transcribe():
-    if 'file' not in request.files:
-        return "No file part", 400
-    
-    file = request.files['file']
-    
+@app.post('/transcribe')
+def http_transcribe(file: UploadFile):
     if file.filename == '':
         return "No selected file", 400
     
     print("Converting audio...")
 
     with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_input_audio:
-        file.save(temp_input_audio.name)  # Save uploaded WebM file
+        shutil.copyfileobj(file.file, temp_input_audio)
+        # file.save(temp_input_audio.name)  # Save uploaded WebM file
         temp_input_audio.flush()  # Ensure all data is written
         
         # Convert to 16 kHz mono WAV using ffmpeg
@@ -56,7 +57,7 @@ def http_transcribe():
             
             # Pass converted file to Whisper model
             result = transcribe_file(temp_output_audio.name)
-    return jsonify({"message": "Success", "transcription": result["transcription"], "duration": result["duration"]})
+    return ({"message": "Success", "transcription": result["transcription"], "duration": result["duration"]})
 
 async def ws_handler(websocket):
     audio_buffer = b""
@@ -68,7 +69,7 @@ async def ws_handler(websocket):
         transcription_result = transcribe_file(audio_buffer)
 
         # Send the transcription result back to the client
-        await websocket.send(jsonify({"message": "Success", "transcription": transcription_result["transcription"], "duration": transcription_result["duration"]}))
+        await websocket.send(({"message": "Success", "transcription": transcription_result["transcription"], "duration": transcription_result["duration"]}))
 
         # Optionally, clear the buffer after processing
         audio_buffer = b""
@@ -104,7 +105,7 @@ async def ws_handler(websocket):
 
 #                 # Load and buffer the audio
 #                 chunk = AudioSegment.from_wav(temp_wav)
-#                 audio_buffer.append(chunk)
+#                 audio_buffer.append(chunk)import whisper
 
 #             # Check if it's time to transcribe
 #             if len(audio_buffer) >= 3:  # For example, every 3 chunks
@@ -132,7 +133,7 @@ async def ws_handler(websocket):
 def transcribe_file(file):
     print("Transcribing...")
     start = time.time()
-    transcription = whisper(file, num_workers=16, batch_size=8)
+    transcription = model.transcribe(file, language='fr', task='transcribe') 
     end = time.time()
     print(transcription["text"])
     return {"transcription":transcription["text"],"duration":round(end-start,2)}
@@ -151,24 +152,9 @@ def cli_transcribe(max_duration_in_seconds = 20):
     transcribe_file(wav_file)
     os.remove(wav_file)
     
-# async def ws_handler(websocket):
-#     while True:
-#         message = await websocket.recv()
-#         print(message)
-
-
-async def ws_main():
-    async with serve(ws_handler, "", 5000):
-        await asyncio.get_running_loop().create_future()  # run forever
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode","-m", type=str, help="Whether to run the CLI, the HTTP server or the WebSocket server", choices=["cli","ws_server","http_server"], default="http_server")
-    parser.add_argument("--duration","-d", type=int,default=20, help="The duration of the recording in seconds")
-    args = parser.parse_args()
-    if args.mode == "http_server":
-        app.run()
-    elif args.mode == "ws_server":
-       asyncio.run(ws_main())
-    elif args.mode == "cli":
-        cli_transcribe(args.duration)
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message text was: {data}")

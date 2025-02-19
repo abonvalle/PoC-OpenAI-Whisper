@@ -123,3 +123,7 @@ POST /transcribe
 │── app.py # Flask application
 └── requirements.txt # Python dependencies
 ```
+
+# TODO : update readme with fastapi
+
+fastapi dev app.py --port 5000;

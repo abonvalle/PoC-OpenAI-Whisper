@@ -47,7 +47,7 @@ function stopRecording() {
 }
 
 function connectToSocket(connexionCallback, transcriptionCallback) {
-  socket = new WebSocket(`ws://${apiURL}`);
+  socket = new WebSocket(`ws://${apiURL}/ws`);
 
   socket.addEventListener("open", () => {
     console.log("Connected to websocket");

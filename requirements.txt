@@ -1,7 +1,8 @@
-flask
 sounddevice
 scipy
-flask-cors
 transformers
 torch
 websockets
+fastapi
+python-multipart
+openai-whisper
