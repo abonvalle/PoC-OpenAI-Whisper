@@ -1,9 +1,9 @@
+import numpy as np
 import sounddevice as sd
 import os
 import scipy.io.wavfile as wav
 import tempfile
 import subprocess
-import argparse
 import time
 import torch
 import tempfile
@@ -56,84 +56,80 @@ def http_transcribe(file: UploadFile):
             subprocess.run(ffmpeg_cmd, check=True)
             
             # Pass converted file to Whisper model
-            result = transcribe_file(temp_output_audio.name)
+            result = transcribe_audio(temp_output_audio.name)
     return ({"message": "Success", "transcription": result["transcription"], "duration": result["duration"]})
 
-async def ws_handler(websocket):
-    audio_buffer = b""
-    async for message in websocket:
-        # Accumulate audio chunks
-        audio_buffer += message
+import tempfile
+import subprocess
 
-        # Process the audio buffer (you might want to handle this in a separate task)
-        transcription_result = transcribe_file(audio_buffer)
+# Store metadata globally or in a class if using multiple connections
+metadata_cache:bytes = None
 
-        # Send the transcription result back to the client
-        await websocket.send(({"message": "Success", "transcription": transcription_result["transcription"], "duration": transcription_result["duration"]}))
+async def ws_handler(data: bytes, is_first_chunk: bool):
+    global metadata_cache
+    
+    # If this is the first chunk, extract the metadata
+    if is_first_chunk:
+        # Create a temporary file for the first chunk
+        with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_audio:
+            temp_audio.write(data)
+            temp_audio.flush()
 
-        # Optionally, clear the buffer after processing
-        audio_buffer = b""
+            # Read the first chunk to extract metadata
+            with open(temp_audio.name, "rb") as f:
+                first_chunk = f.read()
+                metadata_end = find_metadata_end(first_chunk)
+                metadata_cache = first_chunk[:metadata_end]
 
-# audio_buffer = []
-# # @socketio.on('transcribe')
-# async def ws_handler(websocket):
-#     while True:
-#         message = await websocket.recv()
-#         print("Received audio chunk")
+    # Prepend metadata to subsequent chunks
+    if not is_first_chunk and metadata_cache:
+        data = metadata_cache + data
 
-#         # Save chunk temporarily
-#         with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_audio:
-#             temp_audio.write(message)
-#             temp_audio.flush()
+    # Continue with audio processing
+    with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_audio:
+        temp_audio.write(data)
+        temp_audio.flush()
+        
+        with tempfile.NamedTemporaryFile(delete=True, suffix=".wav") as temp_output_audio:
+            # Build ffmpeg command
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-i", temp_audio.name,  # Input file
+                "-ac", "1",             # Convert to mono
+                "-ar", "16000",         # Set sample rate to 16 kHz
+                "-y",                   # Overwrite output if exists
+                "-loglevel", "error",   # Suppress verbose output
+                "-nostats",             # Disable progress statistics
+                temp_output_audio.name  # Output file
+            ]
+            
+            # Run ffmpeg command
+            subprocess.run(ffmpeg_cmd, check=True)
 
-#             # Convert to wav
-#             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_wav:
-#                 os.system(f"ffmpeg -i {temp_audio.name} -ac 1 -ar 16000 -y -loglevel error -nostats {temp_wav.name}")
-#                 # ffmpeg_cmd = [
-#                 #     "ffmpeg",
-#                 #     "-i", temp_audio.name,  # Input file
-#                 #     "-ac", "1",                  # Convert to mono
-#                 #     "-ar", "16000",              # Set sample rate to 16 kHz
-#                 #     "-y",                        # Overwrite output if exists
-#                 #     "-loglevel", "error",        # Suppress verbose output
-#                 #     "-nostats",                  # Disable progress statistics
-#                 #     temp_wav.name       # Output file
-#                 # ]
+            # Now, process the converted WAV file
+            with open(temp_output_audio.name, "rb") as wav_file:
+                # wav_data = wav_file.read()
+                transcription_result = transcribe_audio(wav_file.name)
+                return {"message": "Success", "transcription": transcription_result["transcription"], "duration": transcription_result["duration"]}
+                # Do something with the WAV data, like sending it to another service
 
-#                 # # Run ffmpeg command
-#                 # subprocess.run(ffmpeg_cmd, check=True)
 
-#                 # Load and buffer the audio
-#                 chunk = AudioSegment.from_wav(temp_wav)
-#                 audio_buffer.append(chunk)import whisper
+def find_metadata_end(data: bytes) -> int:
+    # WebM Cluster ID: 0x1F 0x43 0xB6 0x75
+    cluster_id = b'\x1F\x43\xB6\x75'
+    cluster_index = data.find(cluster_id)
 
-#             # Check if it's time to transcribe
-#             if len(audio_buffer) >= 3:  # For example, every 3 chunks
-#                 joined_audio = sum(audio_buffer)
+    # If Cluster ID is found, return its position
+    if cluster_index != -1:
+        return cluster_index
+    
+    # If Cluster ID is not found, assume the whole chunk is metadata
+    return len(data)
 
-#                 # Detect natural silence points
-#                 silence_thresh = -40  # Adjust as needed
-#                 min_silence_len = 500  # 0.5 seconds
-#                 chunks = silence.split_on_silence(joined_audio, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
-
-#                 # Only transcribe if there's at least one chunk
-#                 if chunks:
-#                     # Join chunks into a single audio segment
-#                     final_audio = sum(chunks)
-#                     with tempfile.NamedTemporaryFile(delete=True, suffix=".wav") as final_wav:
-#                         final_audio.export(final_wav.name, format="wav")
-#                         transcription = transcribeFile(final_wav.name)
-
-#                         # Send transcription back to client
-#                         await websocket.send(jsonify(transcription))
-
-#                 # Clear the buffer after processing
-#                 audio_buffer.clear()
-
-def transcribe_file(file):
+def transcribe_audio(audio:str | np.ndarray | torch.Tensor):
     print("Transcribing...")
     start = time.time()
-    transcription = model.transcribe(file, language='fr', task='transcribe') 
+    transcription = model.transcribe(audio, language='fr', task='transcribe') 
     end = time.time()
     print(transcription["text"])
     return {"transcription":transcription["text"],"duration":round(end-start,2)}
@@ -149,12 +145,15 @@ def cli_transcribe(max_duration_in_seconds = 20):
     wav_file = "output.wav"
     wav.write(wav_file, fs, recording)
 
-    transcribe_file(wav_file)
+    transcribe_audio(wav_file)
     os.remove(wav_file)
     
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    firstChunk = True
     while True:
-        data = await websocket.receive_text()
-        await websocket.send_text(f"Message text was: {data}")
+        data = await websocket.receive_bytes()
+        res = await ws_handler(data,firstChunk)
+        firstChunk = False
+        await websocket.send_json(res)

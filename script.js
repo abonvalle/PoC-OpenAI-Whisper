@@ -124,20 +124,12 @@ function uploadFile() {
             socket.send(chunk);
           });
         },
-        (result) => displayResult(result)
+        (result) => {
+          const parsedRes = JSON.parse(result);
+          displayResult(parsedRes);
+        }
       );
     } else {
-      const chunks = [];
-      // readFile(
-      //   file,
-      //   (chunk) => {
-      //     chunks.push(chunk);
-      //   },
-      //   async () => {
-      //     const result = await sendThroughHTTP(chunks, file.type);
-      //     displayResult(result, true);
-      //   }
-      // );
       const result = await sendThroughHTTP([file], file.type);
       displayResult(result, true);
     }
