@@ -1,18 +1,18 @@
 # Audio Transcription PoC 🎤 → 📝
 
-A simple Proof of Concept (PoC) application that records audio from the microphone in a web front-end, sends it to a Flask API, and transcribes it using OpenAI's Whisper model.
+A simple Proof of Concept (PoC) application that records audio from the microphone in a web front-end, sends it to a Fastapi API, and transcribes it using OpenAI's Whisper model.
 
 ## 📌 Features
 
 - Record audio directly from the browser
-- Send recorded audio to a Flask backend
+- Send recorded audio to a Fastapi backend
 - Use OpenAI Whisper for speech-to-text transcription
 - Display the transcribed text in the UI
 
 ## 📦 Tech Stack
 
 - Frontend: JavaScript (Vanilla JS) + HTML + CSS
-- Backend: Python + Flask
+- Backend: Python + Fastapi
 - Transcription Model: OpenAI Whisper
 - Audio Processing: ffmpeg
 
@@ -64,21 +64,12 @@ choco install ffmpeg
 
 ---
 
-### 2️⃣ Run the Flask Backend
+### 2️⃣ Run the Fastapi Backend
 
-#### 1. Set environment variables for Flask (first time only to enable debug mode and set the app entry point):
-
-```sh
-export FLASK_APP=app
-export FLASK_ENV=development
-```
-
----
-
-#### 2. Run Flask
+#### 1. Run Fastapi server
 
 ```sh
-flask run
+fastapi dev app.py --port 5000
 ```
 
 The API should now be running at: http://localhost:5000
@@ -87,7 +78,8 @@ The API should now be running at: http://localhost:5000
 
 ### 3️⃣ Run the Frontend
 
-Simply open index.html in a browser (Chrome recommended).
+Use the live server extension https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer (recommended)
+or open index.html in a browser.
 
 ## 🛠️ API Endpoints
 
@@ -120,7 +112,7 @@ POST /transcribe
 /PoC-OpenAI-Whisper
 │── index.html # Main UI
 │── script.js # Handles recording & API calls
-│── app.py # Flask application
+│── app.py # Fastapi application
 └── requirements.txt # Python dependencies
 ```
 
