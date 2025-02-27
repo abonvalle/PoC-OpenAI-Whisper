@@ -129,7 +129,7 @@ def find_metadata_end(data: bytes) -> int:
 def transcribe_audio(audio:str | np.ndarray | torch.Tensor):
     print("Transcribing...")
     start = time.time()
-    transcription = model.transcribe(audio, language='fr', task='transcribe') 
+    transcription = model.transcribe(audio, language='fr', task='transcribe', fp16=torch.cuda.is_available()) 
     end = time.time()
     print(transcription["text"])
     return {"transcription":transcription["text"],"duration":round(end-start,2)}
