@@ -3,11 +3,10 @@ import sounddevice as sd
 import os
 import scipy.io.wavfile as wav
 import tempfile
-import subprocess
 import time
 import torch
 import tempfile
-from fastapi import FastAPI, UploadFile, WebSocket
+from fastapi import FastAPI, UploadFile, WebSocket, Header
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Literal
 import whisper
@@ -17,6 +16,7 @@ modelsType = Literal['tiny.en', 'tiny', 'base.en', 'base', 'small.en', 'small', 
 global model
 model= whisper.load_model("turbo") 
 app = FastAPI()
+handled_audio_types=["audio/wav","audio/webm"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,58 +27,38 @@ app.add_middleware(
 )
 
 @app.post('/transcribe')
-def http_transcribe(file: UploadFile):
+def http_transcribe(file: UploadFile,x_audio_type: str = Header(None)):
     if file.filename == '':
         return "No selected file", 400
-    
+    print(x_audio_type[:x_audio_type.find(";")])
+    try:
+        audio_type=audio_type_from_mime(x_audio_type[:x_audio_type.find(";")])
+    except ValueError as e:
+        return "Unsupported audio type", 400
     print("Converting audio...")
-
-    with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_input_audio:
+    with tempfile.NamedTemporaryFile(delete=True, suffix="."+audio_type) as temp_input_audio:
         shutil.copyfileobj(file.file, temp_input_audio)
-        # file.save(temp_input_audio.name)  # Save uploaded WebM file
         temp_input_audio.flush()  # Ensure all data is written
-        
-        # Convert to 16 kHz mono WAV using ffmpeg
-        with tempfile.NamedTemporaryFile(delete=True, suffix=".wav") as temp_output_audio:
-            # Build ffmpeg command
-            ffmpeg_cmd = [
-                "ffmpeg",
-                "-i", temp_input_audio.name,  # Input file
-                "-ac", "1",                  # Convert to mono
-                "-ar", "16000",              # Set sample rate to 16 kHz
-                "-y",                        # Overwrite output if exists
-                "-loglevel", "error",        # Suppress verbose output
-                "-nostats",                  # Disable progress statistics
-                temp_output_audio.name       # Output file
-            ]
-            
-            # Run ffmpeg command
-            subprocess.run(ffmpeg_cmd, check=True)
-            
-            # Pass converted file to Whisper model
-            result = transcribe_audio(temp_output_audio.name)
-    return ({"message": "Success", "transcription": result["transcription"], "duration": result["duration"]})
-
-import tempfile
-import subprocess
+        result = transcribe_audio(temp_input_audio.name)
+        return ({"message": "Success", "transcription": result["transcription"], "duration": result["duration"]})
 
 # Store metadata globally or in a class if using multiple connections
 metadata_cache:bytes = None
 
-async def ws_handler(data: bytes, is_first_chunk: bool):
+async def ws_handler(data: bytes, is_first_chunk: bool, audio_type: str):
     global metadata_cache
     
     # If this is the first chunk, extract the metadata
     if is_first_chunk:
         # Create a temporary file for the first chunk
-        with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_audio:
+        with tempfile.NamedTemporaryFile(delete=True, suffix="."+audio_type) as temp_audio:
             temp_audio.write(data)
             temp_audio.flush()
 
             # Read the first chunk to extract metadata
             with open(temp_audio.name, "rb") as f:
                 first_chunk = f.read()
-                metadata_end = find_metadata_end(first_chunk)
+                metadata_end = find_metadata_end(first_chunk,audio_type)
                 metadata_cache = first_chunk[:metadata_end]
 
     # Prepend metadata to subsequent chunks
@@ -86,42 +66,38 @@ async def ws_handler(data: bytes, is_first_chunk: bool):
         data = metadata_cache + data
 
     # Continue with audio processing
-    with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_audio:
+    with tempfile.NamedTemporaryFile(delete=True, suffix="."+audio_type) as temp_audio:
         temp_audio.write(data)
         temp_audio.flush()
+        transcription_result = transcribe_audio(temp_audio.name)
+    return {"message": "Success", "transcription": transcription_result["transcription"], "duration": transcription_result["duration"]}
+
+def audio_type_from_mime(mime_type: str) -> str:
+    if mime_type not in handled_audio_types:
+        raise ValueError("Unsupported audio type")
+    
+    if mime_type == "audio/webm":
+        return "webm"
+    elif mime_type == "audio/wav":
+        return "wav"
+    
+    raise ValueError("Unsupported audio type")
+
+def find_metadata_end(data: bytes, audio_type:str) -> int:
+    if audio_type == "webm":
+        # WebM Cluster ID: 0x1F 0x43 0xB6 0x75
+        cluster_id = b'\x1F\x43\xB6\x75'
+        cluster_offset=0
+    elif audio_type == "wav":
+        # WAV Data Chunk ID: "data"
+        cluster_id = b'data'
+        cluster_offset=8
         
-        with tempfile.NamedTemporaryFile(delete=True, suffix=".wav") as temp_output_audio:
-            # Build ffmpeg command
-            ffmpeg_cmd = [
-                "ffmpeg",
-                "-i", temp_audio.name,  # Input file
-                "-ac", "1",             # Convert to mono
-                "-ar", "16000",         # Set sample rate to 16 kHz
-                "-y",                   # Overwrite output if exists
-                "-loglevel", "error",   # Suppress verbose output
-                "-nostats",             # Disable progress statistics
-                temp_output_audio.name  # Output file
-            ]
-            
-            # Run ffmpeg command
-            subprocess.run(ffmpeg_cmd, check=True)
-
-            # Now, process the converted WAV file
-            with open(temp_output_audio.name, "rb") as wav_file:
-                # wav_data = wav_file.read()
-                transcription_result = transcribe_audio(wav_file.name)
-                return {"message": "Success", "transcription": transcription_result["transcription"], "duration": transcription_result["duration"]}
-                # Do something with the WAV data, like sending it to another service
-
-
-def find_metadata_end(data: bytes) -> int:
-    # WebM Cluster ID: 0x1F 0x43 0xB6 0x75
-    cluster_id = b'\x1F\x43\xB6\x75'
     cluster_index = data.find(cluster_id)
 
     # If Cluster ID is found, return its position
     if cluster_index != -1:
-        return cluster_index
+        return cluster_index + cluster_offset
     
     # If Cluster ID is not found, assume the whole chunk is metadata
     return len(data)
@@ -151,9 +127,15 @@ def cli_transcribe(max_duration_in_seconds = 20):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    has_audio_type = False
     firstChunk = True
     while True:
-        data = await websocket.receive_bytes()
-        res = await ws_handler(data,firstChunk)
+        data = await websocket.receive();
+        if has_audio_type == False:
+            audio_type = audio_type_from_mime(data.get("text"))
+            has_audio_type = True
+            continue
+            
+        res = await ws_handler(data.get("bytes"),firstChunk,audio_type)
         firstChunk = False
         await websocket.send_json(res)

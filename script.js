@@ -26,10 +26,17 @@ function startRecording() {
       (result) => displayResult(result)
     );
   } else {
-    this.recordMicrophone(1000, undefined, async (audioChunks) => {
-      const result = await sendThroughHTTP(audioChunks, mediaRecorder.mimeType);
-      displayResult(result, true);
-    });
+    this.recordMicrophone(
+      1000,
+      () => {},
+      async (audioChunks) => {
+        const result = await sendThroughHTTP(
+          audioChunks,
+          mediaRecorder.mimeType
+        );
+        displayResult(result, true);
+      }
+    );
   }
 }
 
@@ -102,6 +109,9 @@ async function sendThroughHTTP(audioChunks, mimeType) {
   formData.append("file", audioBlob, `recording.${mimeType.split("/")[1]}`);
 
   const response = await fetch(`http://${apiURL}/transcribe`, {
+    headers: {
+      "X-Audio-Type": mimeType,
+    },
     method: "POST",
     body: formData,
   });
@@ -120,6 +130,7 @@ function uploadFile() {
     if (protocolSelect.value === "websocket") {
       this.connectToSocket(
         () => {
+          socket.send(file.type);
           readFile(file, (chunk) => {
             socket.send(chunk);
           });
